@@ -1,0 +1,98 @@
+# Starter pipeline
+# Start with a minimal pipeline that you can customize to build and deploy your code.
+# Add steps that build, run tests, deploy, and more:
+# https://aka.ms/yaml
+
+trigger:
+- main
+
+stages:
+  - stage: Build
+    displayName: 'Build Stage'
+    pool:
+     vmimage: vs2017-win2016
+     
+    jobs:
+      - job: BuildJob
+        displayName: BuildJob
+        steps:
+          - task: GoTool@0
+            displayName: GoTool
+            inputs:
+              version: '1.10'
+          
+          - task: Go@0
+            displayName: Go Get
+            inputs:
+              command: 'get'
+              arguments: '-d'
+
+          - task: Go@0
+            displayName: Go Build
+            inputs:
+              command: build
+              arguments: -o "TechChallengeApp.exe"
+            
+          - task: ArchiveFiles@2
+            displayName: Archive files
+            inputs:
+              rootFolderOrFile: $(Build.Repository.LocalPath)
+              includeRootFolder: False
+              replaceExistingArchive: true
+
+          
+          - task: PublishBuildArtifacts@1
+            inputs:
+              PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+              ArtifactName: 'drop'
+              publishLocation: 'Container'
+              
+              
+  - stage: Staging
+    displayName: Staging
+    dependsOn: Build
+    pool:
+     vmImage: 'DC04'
+    
+    jobs:
+      - deployment: Staging
+        displayName: StagingJob
+
+        environment:
+         name: Stage
+         resourceName: DC04
+         resourceType: VirtualMachine
+
+        strategy:
+         runOnce:
+           deploy:
+             steps:
+
+              - task: DownloadBuildArtifacts@0
+                inputs:
+                  buildType: 'current'
+                  downloadType: 'specific'
+                  downloadPath: 'c:\myProject'
+                  buildVersionToDownload: latest
+                
+
+              - task: ExtractFiles@1
+                inputs:
+                  archiveFilePatterns: 'c:\myProject\drop\*.zip'
+                  destinationFolder: 'c:\myDevOps'
+                  cleanDestinationFolder: true
+                  overwriteExistingFiles: true
+
+              - task: CmdLine@2
+                inputs:
+                  script: 'TechChallengeApp updatedb -s'
+                  workingDirectory: 'c:\myDevOps'          
+
+              - task: Go@0
+                displayName:  Go Run
+                inputs:
+                  command: 'custom'
+                  customCommand: 'run'
+                  arguments: 'main.go serve'
+                  workingDirectory: 'c:\myDevOps'
+              
